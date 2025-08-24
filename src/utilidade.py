@@ -51,7 +51,8 @@ def infos_simulacao (pasta, chunksize=100)->dict:
         'raio_meia_massa': [],
         'tempo_dinamico': [],
         'tempo_relaxacao_meia_massa': [],
-        'p_total': [],
+        'centro_massas_minicentro': [],
+        'raio_meia_massa_relativo': [],
 
         'escapes': [],
         'virial_central': [],
@@ -65,27 +66,35 @@ def infos_simulacao (pasta, chunksize=100)->dict:
     for i in range(checkpoints):
         # (Provaveis) escapes
         e_tots = mecanica.energia_total_separada(G, massas, qs[i], ps[i], amortecedor)
-        positivos = sum(1 for e_tot in e_tots if e_tot >= 0)
+        positivos = 0
+        indices = []
+        for a, e_tot in enumerate(e_tots):
+          if e_tot >= 0: positivos += 1
+          else: indices.append(a)
         informacoes['escapes'].append(positivos/N)
-
-        # Com os que nao forem possiveis escapes, vamos considerar que sao o centro
-        f_prod_qs = mecanica.virial_potencial_amortecido_separado(G,massas,qs[i],amortecedor)
-        momine_sep = mecanica.momento_inercia_separado(massas, qs[i])
-        virial_central = 0.0
-        momine_central = 0.0
-        for a in range(N):
-          if e_tots[a] < 0:
-            virial_central += (ps[i][a] @ ps[i][a])/massas[a] + f_prod_qs[a]
-            momine_central += momine_sep[a]
-        informacoes['virial_central'].append(virial_central)
-        informacoes['inercia_central'].append(momine_central)
 
         # Centro de massas
         # rcm = centro_massas(massas, np.array(qs[i]))
         # informacoes['centro_massas'].append(rcm)
-        p_total = np.zeros(3)
-        for p in ps[i]: p_total += p
-        informacoes['p_total'].append(np.linalg.norm(p_total))
+        # p_total = np.zeros(3)
+        # for p in ps[i]: p_total += p
+        # informacoes['p_total'].append(np.linalg.norm(p_total))
+        rcm_centro = mecanica.centro_massas(massas, np.array(qs[i]), indices)
+        informacoes['centro_massas_minicentro'].append(np.linalg.norm(rcm_centro))
+
+        # Com os que nao forem possiveis escapes, vamos considerar que sao o centro
+        f_prod_qs = mecanica.virial_potencial_amortecido_separado(G,massas,qs[i],amortecedor)
+        # momine_sep = mecanica.momento_inercia_separado(massas, qs[i])
+        momine_central = mecanica.momento_inercia_indices(massas, qs[i], indices)
+        virial_central = 0.0
+        for a in indices:
+          virial_central += (ps[i][a] @ ps[i][a])/massas[a] + f_prod_qs[a]
+        informacoes['virial_central'].append(virial_central)
+        informacoes['inercia_central'].append(momine_central)
+
+        # Raio de meia massa relativo
+        rmm_relativo = mecanica.raio_meia_massa(massas, np.array(qs[i]), rcm_centro)
+        informacoes['raio_meia_massa_relativo'].append(rmm_relativo)
 
         # Raio de meia massa
         rmm = raio_meia_massa(massas, np.array(qs[i]))
@@ -136,7 +145,8 @@ def infos_simulacao (pasta, chunksize=100)->dict:
         informacoes['autovalores'][2].append(autovalores[2])
 
         # Complexidade
-        informacoes['complexidade'].append(-V*sum(momine_sep))
+        I = mecanica.momento_inercia(massas, qs[i])
+        informacoes['complexidade'].append(-V*I)
 
     informacoes['cinetica'] = np.array(informacoes['cinetica'])
     informacoes['f_prod_q'] = np.array(informacoes['f_prod_q'])

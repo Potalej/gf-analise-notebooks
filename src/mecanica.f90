@@ -79,26 +79,70 @@ END FUNCTION energia_total_separada
 
 FUNCTION momento_inercia_separado (m, R) RESULT(is)
   REAL(8), INTENT(IN) :: m(:), R(:,:)
-  REAL(8) :: is(SIZE(m)), is3d(SIZE(m),3), termo(3)
+  REAL(8) :: is(SIZE(m)), termo
   INTEGER :: a, b
 
   is = 0.0
-  is3d = 0.0
 
   DO a = 2, SIZE(m)
     DO b = 1, a - 1
-      termo = m(b) * (R(a,:) - R(b,:))
-      is3d(a,:) = is3d(a,:) + termo
-      is3d(b,:) = is3d(b,:) + termo
+      termo = m(a) * m(b) * DOT_PRODUCT(R(a,:) - R(b,:),R(a,:) - R(b,:))
+      is(a) = is(a) + termo
+      is(b) = is(b) + termo
     END DO
   END DO
 
-  DO a = 1, SIZE(m)
-    is(a) = m(a) * DOT_PRODUCT(is3d(a,:),is3d(a,:))
-  END DO
-
-  is = is / (SUM(m)**2)
+  is = is / (2.0*SUM(m))
 END FUNCTION momento_inercia_separado
+
+FUNCTION centro_massas (m, R, indices) RESULT(rcm)
+  REAL(8), INTENT(IN) :: m(:), R(:,:)
+  INTEGER, INTENT(IN) :: indices(:)
+  REAL(8) :: rcm(3), m_tot_local
+  INTEGER :: a, i
+  rcm = 0.0
+  m_tot_local = 0.0
+  DO i = 1, SIZE(indices)
+    a = indices(i)
+    rcm = rcm + m(a) * R(a,:)
+    m_tot_local = m_tot_local + m(a)
+  END DO
+  rcm = rcm / m_tot_local
+END FUNCTION centro_massas
+
+FUNCTION momento_inercia (m, R) RESULT(I)
+  REAL(8), INTENT(IN) :: m(:), R(:,:)
+  REAL(8) :: I
+  INTEGER :: a
+  I = 0.0
+  DO a = 1, SIZE(m)
+    I = I + m(a) * DOT_PRODUCT(R(a,:), R(a,:))
+  END DO
+END FUNCTION momento_inercia
+
+FUNCTION momento_inercia_indices (m, R, indices) RESULT(is)
+  REAL(8), INTENT(IN) :: m(:), R(:,:)
+  INTEGER, INTENT(IN) :: indices(:)
+  REAL(8) :: is, rcm(3), m_aux
+  INTEGER :: a, i
+
+  ! Primeiro, vamos calcular o centro de massas relativo
+  rcm = 0.0
+  m_aux = 0.0
+  DO i = 1, SIZE(indices)
+    a = indices(i)
+    rcm = rcm + m(a) * R(a,:)
+    m_aux = m_aux + m(a)
+  END DO
+  rcm = rcm / m_aux
+
+  ! Agora, vamos calcular o momento de inercia relativo a esse centro de massas
+  is = 0.0
+  DO i = 1, SIZE(indices)
+    a = indices(i)
+    is = is + m(a) * DOT_PRODUCT(R(a,:) - rcm, R(a,:) - rcm)
+  END DO
+END FUNCTION momento_inercia_indices
 
 FUNCTION virial_potencial_amortecido_separado (G, m, R, eps) RESULT(f_prod_q)
   REAL(8), INTENT(IN) :: G, m(:), R(:,:), eps
@@ -172,5 +216,62 @@ FUNCTION tensor_inercia_geral (ms, qs) RESULT(tensor)
   END DO
 
 END FUNCTION tensor_inercia_geral
+
+FUNCTION raio_meia_massa (m, R, rcm) RESULT(rhm)
+  REAL(8), INTENT(IN) :: m(:), R(:,:), rcm(3)
+  REAL(8), ALLOCATABLE :: raios(:)
+  INTEGER, ALLOCATABLE :: indices(:)
+  REAL(8) :: m_aux, m_tot, rhm
+  INTEGER :: a, i, N
+
+  m_tot = SUM(m)
+  rhm = 0.0
+  m_aux = 0.0
+  N = SIZE(m)
+
+  ! Calcula os raios
+  ALLOCATE(raios(N))
+  DO a = 1, N
+    raios(a) = NORM2(R(a,:) - rcm)
+  END DO
+
+  ! Ordena
+  ALLOCATE(indices(N))
+  CALL ordenar(raios, indices)
+
+  ! Calcula o raio de meia massa
+  DO i = 1, SIZE(m)
+    a = indices(i)
+    m_aux = m_aux + m(a)
+    rhm = rhm + raios(a)
+
+    IF (m_aux >= 0.5 * m_tot) EXIT
+  END DO
+
+  DEALLOCATE(raios)
+  DEALLOCATE(indices)
+
+END FUNCTION raio_meia_massa
+
+SUBROUTINE ordenar (lista, indices)
+  REAL(8), INTENT(IN)  :: lista(:)
+  INTEGER, INTENT(OUT) :: indices(:)
+  INTEGER :: n, i, j, temp
+
+  n = SIZE(lista)
+  DO i = 1, n
+    indices(i) = i
+  END DO
+
+  DO i = 1, n-1
+    DO j = i+1, n
+      IF (lista(indices(j)) < lista(indices(i))) THEN
+          temp = indices(i)
+          indices(i) = indices(j)
+          indices(j) = temp
+      END IF
+    END DO
+  END DO
+END SUBROUTINE ordenar
 
 END MODULE mecanica
