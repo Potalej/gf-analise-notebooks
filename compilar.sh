@@ -1,0 +1,1 @@
+python -m numpy.f2py -c -m mecanica src/mecanica.f90
